@@ -353,6 +353,24 @@ AIGC:
 5. **e2e 期望值与契约一致**：403/401/307 必须按实际路由与中间件行为断言，不臆测
 6. **批量替换后的残留核查**：用脚本/正则批量替换后，全局 grep 确认无残留旧符号，避免运行期 ImportError
 
+### 13.6 锁文件副作用防护（依赖 lockfile，强制）
+
+> **核心原则**：依赖锁文件（uv.lock / package-lock.json / pnpm-lock.yaml / yarn.lock / Cargo.lock 等）只允许在"确需更新依赖"的独立提交中变更；任何触发依赖工具链执行的动作（`uv run` / `uv sync` / 经包管理器执行的 ruff/mypy/eslint 等、pre-commit hook）都可能自动归一化重写锁文件，引入与任务无关的 diff，禁止让此类副作用混入业务提交。
+
+**触发条件**：任何可能触发依赖工具链执行的提交前流程（pre-commit 检查、手动包管理器命令、`add/remove/lock` 等）。
+
+**执行步骤**：
+
+1. commit 前先跑 `git status`，检查锁文件是否有改动
+2. 若锁文件出现改动但本次任务**不涉及依赖变更**，立即 `git restore <lockfile>` 还原，禁止带进提交
+3. 确需更新依赖时，单独提交依赖更新（如 `build(deps): update lockfile`），与业务改动隔离，便于 review 与回滚
+
+**坑位**：
+- pre-commit hook 经包管理器（如 `uv run ruff/mypy`）执行时，工具启动会自动做 lockfile 归一化，可能静默删除锁文件中重复的 dev 依赖声明，diff 与业务无关
+- `git add -A` / `git commit -am` 会把锁文件副作用一并纳入暂存，务必先 `git status` 拦截
+
+**反例（2026-09-04）**：一次无关提交中 pre-commit 触发包管理器自动归一化，删除了锁文件中重复 dev 依赖声明 12 行，未核查 git status 导致无关 diff 差点进入提交；已 `git restore` 还原锁文件，未进提交。
+
 ---
 
 ## 14. 数据与发布安全（强制）
@@ -451,5 +469,5 @@ AIGC:
 
 ---
 
-*最后更新：2026-09-02*
+*最后更新：2026-09-04*
 *（内容由AI生成，仅供参考）*
